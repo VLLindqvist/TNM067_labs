@@ -48,6 +48,41 @@ MarchingTetrahedra::MarchingTetrahedra()
     });
 }
 
+vec3 MarchingTetrahedra::TriangleCreator::interpolatePosition(const DataPoint& dp1, const DataPoint& dp2) {
+    if(dp1.value == iso) return dp1.pos;
+    if(dp2.value == iso) return dp2.pos;
+
+    // float interpolationValue = (iso - dp1.value) / (dp2.value - dp1.value);
+    // if (dp1.value > dp2.value) interpolationValue = 1.0f - interpolationValue;
+    // return (dp1.pos * (1.0f - interpolationValue)) + (dp2.pos * interpolationValue);
+    
+    return dp1.pos + ((dp2.pos - dp1.pos) * (iso - dp1.value)) / (dp2.value - dp1.value);
+}
+
+void MarchingTetrahedra::TriangleCreator::createTriangle(bool inverted, std::pair<int, int> line1, std::pair<int, int> line2, std::pair<int, int> line3) {
+    auto v0 = mesh.addVertex(
+        interpolatePosition(tetrahedra.dataPoints[line1.first], tetrahedra.dataPoints[line1.second]),
+        tetrahedra.dataPoints[line1.first].index,
+        tetrahedra.dataPoints[line1.second].index
+    );
+    auto v1 = mesh.addVertex(
+        interpolatePosition(tetrahedra.dataPoints[line2.first], tetrahedra.dataPoints[line2.second]),
+        tetrahedra.dataPoints[line2.first].index,
+        tetrahedra.dataPoints[line2.second].index
+    );
+    auto v2 = mesh.addVertex(
+        interpolatePosition(tetrahedra.dataPoints[line3.first], tetrahedra.dataPoints[line3.second]),
+        tetrahedra.dataPoints[line3.first].index,
+        tetrahedra.dataPoints[line3.second].index
+    );
+
+    if (inverted) {
+        mesh.addTriangle(v0, v2, v1);
+    } else {
+        mesh.addTriangle(v0, v1, v2);
+    }
+}
+
 void MarchingTetrahedra::process() {
     auto volume = volume_.getData()->getRepresentation<VolumeRAM>();
     MeshHelper mesh(volume_.getData());
@@ -67,61 +102,87 @@ void MarchingTetrahedra::process() {
         for (pos.y = 0; pos.y < dims.y - 1; ++pos.y) {
             for (pos.x = 0; pos.x < dims.x - 1; ++pos.x) {
                 // Step 1: create current cell
-
+                
                 // The DataPoint index should be the 1D-index for the DataPoint in the cell
                 // Use volume->getAsDouble to query values from the volume
                 // Spatial position should be between 0 and 1
 
                 Cell c;
+                for (int z = 0; z < 2; z++)
+                    for(int y = 0; y < 2; y++)
+                        for (int x = 0; x < 2; x++) {
+                            const ivec3 cellPos{x, y, z};
+                            const size3_t cellPosInVolume{pos.x + x, pos.y + y, pos.z + z};
+
+                            size_t index = indexInVolume(cellPosInVolume);
+                            vec3 dpPos = calculateDataPointPos(pos, cellPos, dims);
+                            float value = static_cast<float>(volume->getAsDouble(cellPosInVolume));
+                            c.dataPoints[calculateDataPointIndexInCell(cellPos)] = {dpPos, value, index};
+                        }
 
                 // Step 2: Subdivide cell into tetrahedra (hint: use tetrahedraIds)
                 std::vector<Tetrahedra> tetrahedras;
+                for (const auto tetrahedraId : tetrahedraIds) {
+                    Tetrahedra tetrahedra;
 
+                    for (size_t tetrahedraIdx = 0; tetrahedraIdx < 4; ++tetrahedraIdx)
+                        tetrahedra.dataPoints[tetrahedraIdx] = c.dataPoints[tetrahedraId[tetrahedraIdx]];
+
+                    tetrahedras.push_back(tetrahedra);
+                }
 
                 for (const Tetrahedra& tetrahedra : tetrahedras) {
                     // Step three: Calculate for tetra case index
                     int caseId = 0;
 
+                    for (size_t i = 0; i < 4; ++i)
+                        if (tetrahedra.dataPoints[i].value > iso)
+                            caseId |= (int) pow(2, i); // pow(2, i) = 1, 2, 4 or 8
+
                     // step four: Extract triangles
+                    TriangleCreator tc{mesh, iso, tetrahedra};
 
 					switch (caseId) {
                         case 0:
-                        case 15:
+                        case 15: {
                             break;
+                        }
                         case 1:
                         case 14: {
-
+                            tc.createTriangle(caseId == 14, {0, 1}, {0, 3}, {0, 2});
                             break;
                         }
                         case 2:
                         case 13: {
-
+                            tc.createTriangle(caseId == 13, {1, 0}, {1, 2}, {1, 3});
                             break;
                         }
                         case 3:
                         case 12: {
-
-
+                            tc.createTriangle(caseId == 12, {1, 2}, {1, 3}, {0, 3});
+                            tc.createTriangle(caseId == 12, {1, 2}, {0, 3}, {0, 2});
                             break;
                         }
                         case 4:
                         case 11: {
-
+                            tc.createTriangle(caseId == 11, {2, 3}, {2, 1}, {2, 0});
                             break;
                         }
                         case 5:
                         case 10: {
-
+                            tc.createTriangle(caseId == 10, {2, 1}, {0, 1}, {0, 3});
+                            tc.createTriangle(caseId == 10, {2, 3}, {2, 1}, {0, 3});
                             break;
                         }
                         case 6:
                         case 9: {
-
+                            tc.createTriangle(caseId == 9, {2, 0}, {1, 3}, {1, 0});
+                            tc.createTriangle(caseId == 9, {2, 0}, {1, 3}, {2, 3});
                             break;
                         }
                         case 7:
                         case 8: {
-
+                            tc.createTriangle(caseId == 8, {3, 1}, {3, 0}, {3, 2});
                             break;
                         }
                     }
@@ -145,7 +206,7 @@ vec3 MarchingTetrahedra::calculateDataPointPos(size3_t posVolume, ivec3 posCell,
     const float y = (posVolume.y + posCell.y) / (dims.y - 1.0f);
     const float z = (posVolume.z + posCell.z) / (dims.z - 1.0f);
     
-    return vec3{x, y, z};
+    return {x, y, z};
 }
 
 MarchingTetrahedra::MeshHelper::MeshHelper(std::shared_ptr<const Volume> vol)

@@ -82,6 +82,21 @@ private:
     MeshOutport mesh_;
 
     FloatProperty isoValue_;
+
+    struct TriangleCreator {
+        TriangleCreator(MeshHelper& _mesh, const float _iso, const Tetrahedra& _tetrahedra)
+            : mesh{_mesh}, iso{_iso}, tetrahedra{_tetrahedra}
+        {};
+
+        void createTriangle(bool inverted, std::pair<int, int> line1, std::pair<int, int> line2, std::pair<int, int> line3);
+
+    private:
+        vec3 interpolatePosition(const DataPoint& from, const DataPoint& to);
+
+        MeshHelper& mesh;
+        const Tetrahedra& tetrahedra;
+        float iso;
+    };
 };
 
 }  // namespace inviwo

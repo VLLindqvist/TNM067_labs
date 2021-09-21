@@ -49,8 +49,8 @@ vec3 HydrogenGenerator::cartesianToSpherical(vec3 cartesian) {
      
     if (r < std::numeric_limits<float>::epsilon()) return vec3{0.0, 0.0, 0.0}; // if in origo in the cartesian system
 
-    const float theta = acos(cartesian.z / r);
-    const float phi = atan2(cartesian.y, cartesian.x);
+    const float theta = glm::acos(cartesian.z / r);
+    const float phi = glm::atan(cartesian.y, cartesian.x);
 
     return vec3{r, theta, phi};
 }
