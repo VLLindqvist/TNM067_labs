@@ -17,6 +17,15 @@ in vec3 texCoord_;
 void traverse(vec2 posF, float stepSize, int nSteps, inout float accVal, inout int nSamples){
     // traverse the vectorfield staring at `posF` for `nSteps` using `stepSize` and sample the noiseColor texture for each position
     // store the accumulated value in `accVal` and the amount of samples in `nSamples`
+    for (int currStep = 0; currStep <= nSteps; ++currStep) {
+        float stride = currStep * stepSize;
+        vec2 currPos = posF + (normalize(texture(vfColor, posF).xy) * stride);
+
+        vec3 noise = texture(noiseColor, currPos).rgb;
+
+        accVal += sqrt(pow(noise.x, 2) + pow(noise.y, 2) + pow(noise.z, 2));
+        ++nSamples;
+    }
 }
 
 void main(void) {
@@ -24,6 +33,10 @@ void main(void) {
     int nSamples = 1;
     
     //traverse the vector field both forward and backwards to calculate the output color
+    traverse(texCoord_.xy, stepSize, nSteps, accVal, nSamples);
+    traverse(texCoord_.xy, -stepSize, nSteps, accVal, nSamples);
+
+    accVal /= nSamples;
 
     FragData0 = vec4(accVal, accVal, accVal, 1);
 }
